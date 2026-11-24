@@ -1,247 +1,688 @@
 // =====================================================================
 // TALLER "ALEXANDER" — RUNNER DE PRUEBAS DE LÓGICA (sin UI)
+//
+// Uso:
+//   import { runAllTests } from "../db/testQueries";
+//   await runAllTests();
+//
+// No inserta datos propios: parte de resetDatabase() + initDatabase() y
+// valida el seed de Fase 0. Cada prueba imprime ✔ o ✘ en la consola.
 // =====================================================================
 
+import { CotizacionError } from "./cotizacion-error";
 import {
-  actualizarVehiculo,
-  crearVehiculo,
+  ActivoError,
   eliminarVehiculo,
   getDb,
-  getDetalleCotizacion,
-  getDisponibilidadMantenimiento,
-  getHistorialActivo,
-  getMejorProveedorPorRepuesto,
-  getRepuestosStockBajo,
-  // 1. IMPORTAMOS LAS NUEVAS FUNCIONES CRUD DE VEHÍCULOS
-  getVehiculosConDetalle,
   initDatabase,
   resetDatabase,
 } from "./database";
+import { getResumenHome, getVehiculosRecientes } from "./home";
+import { sembrarDatosIniciales, sembrarDatosOperativos } from "./seed";
+import type { EstadoCotizacion } from "./types";
 
-/** Inserta el set de datos de prueba (equivalente a la Sección A de queries.sql). */
-async function seedTestData(): Promise<void> {
-  const db = getDb();
+// ---------------------------------------------------------------------
+// Infraestructura mínima de pruebas
+// ---------------------------------------------------------------------
 
-  await db.withTransactionAsync(async () => {
-    // --- Catálogos ---
-    await db.runAsync(
-      `INSERT INTO TipoUnidad (nombre) VALUES ('Camion Cisterna'), ('Furgon'), ('Tracto'), ('Motobomba'), ('Generador'), ('Compresor');`,
-    );
-    await db.runAsync(
-      `INSERT INTO Marca (nombre) VALUES ('Freightliner'), ('Inno 300'), ('Chagman');`,
-    );
-    // Los roles 'admin' (1) y 'trabajador' (2) ya los crea initDatabase().
-    await db.runAsync(
-      `INSERT INTO TipoMantenimiento (nombre, intervalo_valor, tipo_medidor_aplicable) VALUES
-        ('PM1', 5000, 'Odometro'), ('PM2', 10000, 'Odometro'), ('PM3', 20000, 'Odometro'),
-        ('PM1-Horas', 250, 'Horometro'), ('Correctivo', 0, 'Odometro'), ('Auxilio', 0, 'Odometro');`,
-    );
-    await db.runAsync(
-      `INSERT INTO CatalogoServicio (nombre, descripcion, precio_referencial) VALUES
-        ('Reparacion sistema de succion', 'Mano de obra especializada', 350.00),
-        ('Revision plataforma hidraulica', 'Diagnostico y ajuste', 280.00),
-        ('Diagnostico general', 'Revision integral', 80.00),
-        ('Hora tecnico', 'Hora de mano de obra estandar', 45.00);`,
-    );
-    await db.runAsync(
-      `INSERT INTO TipoDocumento (nombre, es_documento_externo) VALUES
-        ('Cotizacion', 1), ('Proforma', 1), ('Orden de Servicio Interna', 0);`,
-    );
-    await db.runAsync(
-      `INSERT INTO Proveedor (ruc, razon_social, nombre_comercial, contacto, ubicacion) VALUES
-        ('20123456789', 'Repuestos Industriales SAC', 'RepIndustrial', '01-4567890', 'Callao'),
-        ('20456789123', 'Hidraulica del Peru EIRL', 'HidraulicaPeru', '01-5551234', 'Lima');`,
-    );
-
-    // --- Clientes / Activos / Personal ---
-    await db.runAsync(
-      `INSERT INTO Cliente (tipo_documento_identidad, numero_documento, nombre_razon_social, telefono, tipo_cliente) VALUES
-        ('RUC', '20111222333', 'Transportes Andinos SAC', '999888777', 'Empresa'),
-        ('DNI', '45678912', 'Jorge Ramirez', '988776655', 'Persona Natural');`,
-    );
-    await db.runAsync(
-      `INSERT INTO Activo (id_tipo_unidad, id_marca, id_cliente, tipo_activo, placa, capacidad) VALUES
-        (1, 1, 1, 'Vehiculo', 'ABC-123', 8000),
-        (4, 3, 1, 'EquipoEstacionario', NULL, NULL);`,
-    );
-    await db.runAsync(
-      `INSERT INTO Trabajador (id_rol, nombre, tipo_contrato) VALUES
-        (1, 'Alexander (Dueno)', 'Fijo'), (2, 'Luis Ayudante', 'Fijo'), (2, 'Pedro Tornero', 'Subcontratado');`,
-    );
-    await db.runAsync(
-      `INSERT INTO Repuesto (nombre, codigo_referencia, stock_actual, es_comercial, estado_operativo) VALUES
-        ('Filtro de aceite', 'FIL-001', 12, 1, 'Activo'), ('Empaque de bomba', 'EMP-045', 2, 0, 'Activo');`,
-    );
-    await db.runAsync(
-      `INSERT INTO RepuestoProveedor (id_repuesto, id_proveedor, precio_ofrecido) VALUES
-        (1, 1, 35.00), (1, 2, 38.50), (2, 2, 120.00);`,
-    );
-    await db.runAsync(
-      `INSERT INTO Medidor (id_activo, tipo_medidor, lectura_actual, fecha_ultima_lectura) VALUES
-        (1, 'Odometro', 24500, '2026-09-20'), (2, 'Horometro', 480, '2026-09-18');`,
-    );
-
-    // --- Transaccionales (ejercitan los TRIGGERS) ---
-    await db.runAsync(
-      `INSERT INTO OrdenDeTrabajo
-        (id_activo, id_medidor, id_tipo_mantenimiento, responsable_id, valor_lectura, fecha, descripcion, es_auxilio, estado) VALUES
-        (1, 1, 1, 1, 20000, '2026-08-01', 'Cambio de aceite y filtros PM1', 0, 'Completada'),
-        (1, 1, 2, 1, 22000, '2026-09-01', 'Inspeccion PM2', 0, 'Completada');`,
-    );
-    await db.runAsync(
-      `INSERT INTO OrdenTrabajo_Trabajador (id_orden, id_trabajador, tipo_participacion, rol_en_trabajo) VALUES
-        (1, 2, 'Fijo', 'Apoyo cambio de aceite'), (2, 3, 'Subcontratado', 'Torneado de piezas');`,
-    );
-    await db.runAsync(
-      `INSERT INTO Cotizacion (id_activo, id_tipo_documento, fecha_emision, estado) VALUES (1, 1, '2026-09-22', 'Pendiente');`,
-    );
-    await db.runAsync(
-      `INSERT INTO DetalleCotizacion (id_cotizacion, id_repuesto, id_servicio, tipo_item, cantidad, precio_unitario) VALUES
-        (1, 1, NULL, 'Repuesto', 2, 35.00), (1, NULL, 1, 'Servicio', 1, 350.00);`,
-    );
-    await db.runAsync(
-      `INSERT INTO FotoCotizacion (id_cotizacion, url_imagen, fecha_subida) VALUES
-        (1, 'file:///fotos/cotizacion_1_a.jpg', '2026-09-22');`,
-    );
-  });
-
-  console.log("[SEED] Datos de prueba insertados correctamente.");
+interface ResumenPruebas {
+  total: number;
+  correctas: number;
+  fallidas: number;
+  omitidas: number;
 }
 
-/** Verifica que el TRIGGER de consistencia cruzada rechace un id_activo inconsistente. */
-async function testTriggerConsistenciaActivo(): Promise<void> {
-  const db = getDb();
-  console.log("\n=== TEST: trigger de consistencia id_activo/id_medidor ===");
+export interface ResultadoPruebas extends ResumenPruebas {
+  ok: boolean;
+}
+
+let resumen: ResumenPruebas = {
+  total: 0,
+  correctas: 0,
+  fallidas: 0,
+  omitidas: 0,
+};
+
+function asegurar(condicion: boolean, mensaje: string): asserts condicion {
+  if (!condicion) throw new Error(mensaje);
+}
+
+async function probar(
+  nombre: string,
+  fn: () => Promise<void> | void,
+): Promise<void> {
+  resumen.total += 1;
   try {
-    await db.runAsync(
-      `INSERT INTO OrdenDeTrabajo
-        (id_activo, id_medidor, id_tipo_mantenimiento, responsable_id, valor_lectura, fecha, es_auxilio, estado)
-       VALUES (1, 2, 4, 1, 500, '2026-09-23', 0, 'Pendiente');`,
-    );
-    console.error(
-      "[FAIL] El trigger debió rechazar esta inserción y no lo hizo.",
-    );
+    await fn();
+    resumen.correctas += 1;
+    console.log(`✔ ${nombre}`);
   } catch (error) {
-    console.log(
-      "[OK] El trigger bloqueó la inconsistencia como se esperaba:",
-      (error as Error).message,
-    );
+    resumen.fallidas += 1;
+    const detalle = error instanceof Error ? error.message : String(error);
+    console.error(`✘ ${nombre} — ${detalle}`);
   }
 }
 
-/** Verifica que el TRIGGER de recálculo de monto_total funcione tras el seed. */
-async function testTriggerRecalculoMonto(): Promise<void> {
-  const db = getDb();
-  console.log("\n=== TEST: trigger de recálculo de monto_total ===");
-  const cotizacion = await db.getFirstAsync<{
-    id_cotizacion: number;
-    monto_total: number;
-    estado: string;
-  }>(
-    `SELECT id_cotizacion, monto_total, estado FROM Cotizacion WHERE id_cotizacion = 1;`,
-  );
+function omitir(nombre: string, motivo: string): void {
+  resumen.total += 1;
+  resumen.omitidas += 1;
+  console.log(`⏭ ${nombre} — ${motivo}`);
+}
 
-  const esperado = 2 * 35.0 + 1 * 350.0; // 420.00
-  if (cotizacion?.monto_total === esperado) {
-    console.log(
-      `[OK] monto_total = ${cotizacion.monto_total} (esperado ${esperado})`,
-    );
-  } else {
-    console.error(
-      `[FAIL] monto_total = ${cotizacion?.monto_total}, se esperaba ${esperado}`,
-    );
+async function contarTabla(tabla: string): Promise<number> {
+  const fila = await getDb().getFirstAsync<{ total: number }>(
+    `SELECT COUNT(*) AS total FROM ${tabla};`,
+  );
+  return fila?.total ?? 0;
+}
+
+async function conteosActuales(): Promise<Record<string, number>> {
+  const resultado: Record<string, number> = {};
+  for (const [tabla] of TABLAS_ESPERADAS) {
+    resultado[tabla] = await contarTabla(tabla);
+  }
+  return resultado;
+}
+
+async function mapaStockRepuestos(): Promise<Map<number, number>> {
+  const filas = await getDb().getAllAsync<{
+    id_repuesto: number;
+    stock_actual: number;
+  }>(`SELECT id_repuesto, stock_actual FROM Repuesto;`);
+
+  return new Map(filas.map((f) => [f.id_repuesto, f.stock_actual]));
+}
+
+// ---------------------------------------------------------------------
+// 1. Cuentas esperadas del seed
+// ---------------------------------------------------------------------
+
+const TABLAS_ESPERADAS: readonly (readonly [string, number])[] = [
+  ["Repuesto", 10],
+  ["Proveedor", 3],
+  ["Cotizacion", 4],
+  ["DetalleCotizacion", 8],
+  ["FotoCotizacion", 2],
+  ["RepuestoProveedor", 12],
+  ["Cliente", 7],
+  ["Activo", 11],
+  ["Medidor", 11],
+  ["OrdenDeTrabajo", 3],
+  ["CatalogoServicio", 6],
+  ["TipoDocumento", 3],
+  ["TipoMantenimiento", 6],
+  ["Trabajador", 2],
+  ["Rol", 2],
+  ["Marca", 6],
+  ["TipoUnidad", 4],
+];
+
+async function probarConteosSeed(): Promise<void> {
+  for (const [tabla, esperado] of TABLAS_ESPERADAS) {
+    await probar(`Cuenta de ${tabla} = ${esperado}`, async () => {
+      const real = await contarTabla(tabla);
+      asegurar(real === esperado, `se encontraron ${real} filas`);
+    });
   }
 }
 
-/** Ejecuta todas las consultas de negocio y muestra los resultados. */
-async function runBusinessQueries(): Promise<void> {
-  console.log("\n=== CONSULTA: disponibilidad de mantenimiento por activo ===");
-  console.log(
-    JSON.stringify(await getDisponibilidadMantenimiento(500), null, 2),
-  );
+// ---------------------------------------------------------------------
+// 2. El trigger mantiene monto_total = suma de las líneas
+// ---------------------------------------------------------------------
 
-  console.log("\n=== CONSULTA: historial del Activo #1 (camión ABC-123) ===");
-  console.log(JSON.stringify(await getHistorialActivo(1), null, 2));
+async function probarMontosCotizaciones(): Promise<void> {
+  await probar(
+    "Cada cotización tiene monto_total = suma de sus líneas",
+    async () => {
+      const filas = await getDb().getAllAsync<{
+        id_cotizacion: number;
+        monto_total: number;
+        suma_lineas: number;
+      }>(
+        `
+        SELECT c.id_cotizacion,
+               c.monto_total,
+               COALESCE((
+                 SELECT SUM(dc.cantidad * dc.precio_unitario)
+                   FROM DetalleCotizacion dc
+                  WHERE dc.id_cotizacion = c.id_cotizacion
+               ), 0) AS suma_lineas
+          FROM Cotizacion c
+         ORDER BY c.id_cotizacion ASC;
+        `,
+      );
 
-  console.log("\n=== CONSULTA: mejor proveedor por repuesto ===");
-  console.log(JSON.stringify(await getMejorProveedorPorRepuesto(), null, 2));
+      asegurar(filas.length > 0, "el seed no dejó cotizaciones");
 
-  console.log("\n=== CONSULTA: detalle resuelto de la Cotización #1 ===");
-  console.log(JSON.stringify(await getDetalleCotizacion(1), null, 2));
-
-  console.log("\n=== CONSULTA: repuestos con stock bajo (umbral=5) ===");
-  console.log(JSON.stringify(await getRepuestosStockBajo(5), null, 2));
-}
-
-/** 2. NUEVA FUNCIÓN QUE ENCAPSULA LAS PRUEBAS DEL CRUD DE VEHÍCULOS */
-async function testCrudVehiculos(): Promise<void> {
-  console.log("\n=== TEST CRUD: Listar vehículos iniciales ===");
-  let vehiculos = await getVehiculosConDetalle();
-  console.log(`Total vehículos actuales: ${vehiculos.length}`);
-
-  console.log("\n=== TEST CRUD: Crear un nuevo vehículo de prueba ===");
-  // Usamos el cliente ID=1, tipo_unidad ID=1 y marca ID=1 creados en el seed
-  const nuevoId = await crearVehiculo(
-    1,
-    1,
-    1,
-    "Vehiculo",
-    "XYZ-999",
-    15.5,
-    "Odometro",
-    1000,
-  );
-  console.log(`Vehículo creado con ID: ${nuevoId}`);
-
-  vehiculos = await getVehiculosConDetalle();
-  console.log(
-    "Vehículo encontrado en la lista:",
-    JSON.stringify(
-      vehiculos.find((v) => v.id_activo === nuevoId),
-      null,
-      2,
-    ),
-  );
-
-  console.log("\n=== TEST CRUD: Actualizar el vehículo creado ===");
-  await actualizarVehiculo(nuevoId, 1, 1, "XYZ-998", 20.0);
-  vehiculos = await getVehiculosConDetalle();
-  console.log(
-    "Vehículo actualizado:",
-    JSON.stringify(
-      vehiculos.find((v) => v.id_activo === nuevoId),
-      null,
-      2,
-    ),
-  );
-
-  console.log("\n=== TEST CRUD: Eliminar el vehículo de prueba ===");
-  await eliminarVehiculo(nuevoId);
-  vehiculos = await getVehiculosConDetalle();
-  console.log(
-    `Vehículo eliminado con éxito. Total actual de vehículos: ${vehiculos.length}`,
+      const inconsistentes = filas.filter(
+        (f) => Math.abs(f.monto_total - f.suma_lineas) > 0.001,
+      );
+      asegurar(
+        inconsistentes.length === 0,
+        `montos distintos: ${inconsistentes
+          .map(
+            (f) =>
+              `#${f.id_cotizacion} ${f.monto_total} ≠ ${f.suma_lineas}`,
+          )
+          .join(", ")}`,
+      );
+    },
   );
 }
+
+// ---------------------------------------------------------------------
+// 3. Un segundo arranque no duplica filas (seeds idempotentes)
+// ---------------------------------------------------------------------
+
+async function probarArranqueIdempotente(): Promise<void> {
+  await probar(
+    "Un segundo arranque de los seeds no duplica filas",
+    async () => {
+      const antes = await conteosActuales();
+
+      // initDatabase() ya está inicializada: devuelve la misma instancia.
+      // Las funciones de seed sí se vuelven a ejecutar, igual que en un
+      // reinicio real de la app sobre una base existente.
+      await initDatabase();
+      await sembrarDatosIniciales(getDb());
+      await sembrarDatosOperativos(getDb());
+
+      const despues = await conteosActuales();
+      const diferencias = TABLAS_ESPERADAS.filter(
+        ([tabla]) => antes[tabla] !== despues[tabla],
+      ).map(
+        ([tabla]) =>
+          `${tabla}: ${antes[tabla]} → ${despues[tabla] ?? "sin dato"}`,
+      );
+
+      asegurar(
+        diferencias.length === 0,
+        `se duplicaron filas (${diferencias.join(", ")})`,
+      );
+    },
+  );
+}
+
+// ---------------------------------------------------------------------
+// 4. Home coincide con consultas manuales
+// ---------------------------------------------------------------------
+
+async function probarResumenHome(): Promise<void> {
+  await probar(
+    "getResumenHome() coincide con las consultas manuales",
+    async () => {
+      const manual = await getDb().getFirstAsync<{
+        vehiculosActivos: number;
+        cotizacionesPendientes: number;
+        vehiculosListos: number;
+      }>(
+        `
+        SELECT
+          (SELECT COUNT(*)
+             FROM Activo
+            WHERE tipo_activo = 'Vehiculo') AS vehiculosActivos,
+          (SELECT COUNT(*)
+             FROM Cotizacion
+            WHERE estado = 'Pendiente') AS cotizacionesPendientes,
+          (SELECT COUNT(*)
+             FROM Activo a
+            WHERE a.tipo_activo = 'Vehiculo'
+              AND NOT (
+                EXISTS (
+                  SELECT 1 FROM OrdenDeTrabajo o
+                   WHERE o.id_activo = a.id_activo
+                     AND o.estado IN ('Pendiente', 'En Proceso')
+                )
+                OR EXISTS (
+                  SELECT 1 FROM Cotizacion c
+                   WHERE c.id_activo = a.id_activo
+                     AND c.estado = 'Pendiente'
+                )
+              )) AS vehiculosListos;
+        `,
+      );
+
+      const real = await getResumenHome();
+      asegurar(
+        real.vehiculosActivos === (manual?.vehiculosActivos ?? -1),
+        `vehiculosActivos: ${real.vehiculosActivos} ≠ ${manual?.vehiculosActivos}`,
+      );
+      asegurar(
+        real.cotizacionesPendientes ===
+          (manual?.cotizacionesPendientes ?? -1),
+        `cotizacionesPendientes: ${real.cotizacionesPendientes} ≠ ${manual?.cotizacionesPendientes}`,
+      );
+      asegurar(
+        real.vehiculosListos === (manual?.vehiculosListos ?? -1),
+        `vehiculosListos: ${real.vehiculosListos} ≠ ${manual?.vehiculosListos}`,
+      );
+    },
+  );
+
+  await probar(
+    "getVehiculosRecientes() respeta orden DESC, límite y estado",
+    async () => {
+      const limite = 5;
+      const real = await getVehiculosRecientes(limite);
+      const esperado = await getDb().getAllAsync<{
+        id_activo: number;
+        estado: string;
+      }>(
+        `
+        SELECT a.id_activo,
+               CASE
+                 WHEN (
+                   EXISTS (
+                     SELECT 1 FROM OrdenDeTrabajo o
+                      WHERE o.id_activo = a.id_activo
+                        AND o.estado IN ('Pendiente', 'En Proceso')
+                   )
+                   OR EXISTS (
+                     SELECT 1 FROM Cotizacion c
+                      WHERE c.id_activo = a.id_activo
+                        AND c.estado = 'Pendiente'
+                   )
+                 ) THEN 'En revisión'
+                 ELSE 'Listo'
+               END AS estado
+          FROM Activo a
+         WHERE a.tipo_activo = 'Vehiculo'
+         ORDER BY a.id_activo DESC
+         LIMIT ?;
+        `,
+        [limite],
+      );
+
+      asegurar(real.length <= limite, `devolvió ${real.length} filas`);
+      asegurar(
+        real.length === esperado.length,
+        `devolvió ${real.length} filas, se esperaban ${esperado.length}`,
+      );
+
+      for (let i = 0; i < real.length; i += 1) {
+        asegurar(
+          real[i].id_activo === esperado[i].id_activo,
+          `orden incorrecto en la posición ${i}`,
+        );
+        asegurar(
+          real[i].estado === esperado[i].estado,
+          `estado incorrecto para el activo ${real[i].id_activo}: ${real[i].estado}`,
+        );
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------
+// 5. Aprobación con el frente C (opcional hasta que exista el módulo)
+// ---------------------------------------------------------------------
+
+type EstadoCambiable = Extract<
+  EstadoCotizacion,
+  "Aprobada" | "Rechazada" | "Anulada"
+>;
+
+type CambiarEstadoCotizacion = (
+  idCotizacion: number,
+  nuevoEstado: EstadoCambiable,
+) => Promise<void>;
+
+interface LineaPendiente {
+  id_cotizacion: number;
+  id_activo: number;
+  id_repuesto: number;
+  cantidad: number;
+  stock_actual: number;
+  nombre: string;
+}
+
+async function cargarCambiarEstadoCotizacion(): Promise<CambiarEstadoCotizacion | null> {
+  try {
+    // @ts-ignore — db/cotizaciones-estado.ts lo crea el frente C. Si esta
+    // rama todavía no lo tiene, la prueba se omite en vez de romper el runner.
+    // eslint-disable-next-line import/no-unresolved
+    const modulo = (await import("./cotizaciones-estado")) as {
+      cambiarEstadoCotizacion?: CambiarEstadoCotizacion;
+    };
+    return typeof modulo.cambiarEstadoCotizacion === "function"
+      ? modulo.cambiarEstadoCotizacion
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function lineasPendientesConRepuesto(): Promise<LineaPendiente[]> {
+  return getDb().getAllAsync<LineaPendiente>(
+    `
+    SELECT c.id_cotizacion,
+           c.id_activo,
+           dc.id_repuesto,
+           dc.cantidad,
+           r.stock_actual,
+           r.nombre
+      FROM Cotizacion c
+      JOIN DetalleCotizacion dc ON dc.id_cotizacion = c.id_cotizacion
+      JOIN Repuesto r           ON r.id_repuesto = dc.id_repuesto
+     WHERE c.estado = 'Pendiente'
+       AND dc.tipo_item = 'Repuesto'
+       AND dc.id_repuesto IS NOT NULL
+     ORDER BY c.id_cotizacion ASC, dc.id_detalle ASC;
+    `,
+  );
+}
+
+function agruparPorCotizacion(
+  lineas: LineaPendiente[],
+): Map<number, LineaPendiente[]> {
+  const grupos = new Map<number, LineaPendiente[]>();
+  for (const linea of lineas) {
+    const grupo = grupos.get(linea.id_cotizacion) ?? [];
+    grupo.push(linea);
+    grupos.set(linea.id_cotizacion, grupo);
+  }
+  return grupos;
+}
+
+function requeridoPorRepuesto(
+  lineas: LineaPendiente[],
+): Map<number, number> {
+  const requerido = new Map<number, number>();
+  for (const linea of lineas) {
+    requerido.set(
+      linea.id_repuesto,
+      (requerido.get(linea.id_repuesto) ?? 0) + linea.cantidad,
+    );
+  }
+  return requerido;
+}
+
+async function probarAprobacionConStock(
+  cambiarEstado: CambiarEstadoCotizacion | null,
+): Promise<void> {
+  if (!cambiarEstado) {
+    omitir(
+      "Aprobar con stock suficiente y con stock insuficiente",
+      "falta db/cotizaciones-estado.ts (frente C) en esta rama",
+    );
+    return;
+  }
+
+  await probar(
+    "Aprobar con stock suficiente descuenta el stock y cambia el estado",
+    async () => {
+      const db = getDb();
+      const grupos = agruparPorCotizacion(
+        await lineasPendientesConRepuesto(),
+      );
+
+      let elegida: [number, LineaPendiente[]] | null = null;
+      for (const [idCotizacion, lineas] of grupos) {
+        const requerido = requeridoPorRepuesto(lineas);
+        const alcanza = [...requerido.entries()].every(
+          ([idRepuesto, cantidad]) => {
+            const stock =
+              lineas.find((l) => l.id_repuesto === idRepuesto)
+                ?.stock_actual ?? 0;
+            return stock >= cantidad;
+          },
+        );
+        if (alcanza) {
+          elegida = [idCotizacion, lineas];
+          break;
+        }
+      }
+
+      asegurar(
+        elegida !== null,
+        "no hay ninguna cotización Pendiente con stock suficiente",
+      );
+
+      const [idCotizacion, lineas] = elegida!;
+      const idActivo = lineas[0].id_activo;
+      const requerido = requeridoPorRepuesto(lineas);
+      const stockAntes = new Map(
+        lineas.map((l) => [l.id_repuesto, l.stock_actual]),
+      );
+      const resumenAntes = await getResumenHome();
+
+      const otrasPendientes = await db.getFirstAsync<{ total: number }>(
+        `SELECT COUNT(*) AS total
+           FROM Cotizacion
+          WHERE id_activo = ? AND estado = 'Pendiente' AND id_cotizacion <> ?;`,
+        [idActivo, idCotizacion],
+      );
+      const ordenesAbiertas = await db.getFirstAsync<{ total: number }>(
+        `SELECT COUNT(*) AS total
+           FROM OrdenDeTrabajo
+          WHERE id_activo = ? AND estado IN ('Pendiente', 'En Proceso');`,
+        [idActivo],
+      );
+
+      await cambiarEstado(idCotizacion, "Aprobada");
+
+      const cabecera = await db.getFirstAsync<{ estado: string }>(
+        `SELECT estado FROM Cotizacion WHERE id_cotizacion = ?;`,
+        [idCotizacion],
+      );
+      asegurar(
+        cabecera?.estado === "Aprobada",
+        `el estado quedó en ${cabecera?.estado}`,
+      );
+
+      const resumenDespues = await getResumenHome();
+      asegurar(
+        resumenDespues.cotizacionesPendientes ===
+          resumenAntes.cotizacionesPendientes - 1,
+        `cotizacionesPendientes: ${resumenAntes.cotizacionesPendientes} → ${resumenDespues.cotizacionesPendientes}`,
+      );
+
+      const quedaLibre =
+        (otrasPendientes?.total ?? 0) === 0 &&
+        (ordenesAbiertas?.total ?? 0) === 0;
+      if (quedaLibre) {
+        asegurar(
+          resumenDespues.vehiculosListos === resumenAntes.vehiculosListos + 1,
+          `vehiculosListos: ${resumenAntes.vehiculosListos} → ${resumenDespues.vehiculosListos}`,
+        );
+        const recientes = await getVehiculosRecientes(100);
+        asegurar(
+          recientes.find((v) => v.id_activo === idActivo)?.estado === "Listo",
+          `el vehículo #${idActivo} no quedó como Listo`,
+        );
+      } else {
+        asegurar(
+          resumenDespues.vehiculosListos === resumenAntes.vehiculosListos,
+          `vehiculosListos cambió aunque el vehículo seguía en revisión`,
+        );
+      }
+
+      for (const [idRepuesto, cantidad] of requerido) {
+        const repuesto = await db.getFirstAsync<{ stock_actual: number }>(
+          `SELECT stock_actual FROM Repuesto WHERE id_repuesto = ?;`,
+          [idRepuesto],
+        );
+        const esperado = (stockAntes.get(idRepuesto) ?? 0) - cantidad;
+        asegurar(
+          repuesto?.stock_actual === esperado,
+          `repuesto #${idRepuesto}: stock ${repuesto?.stock_actual}, se esperaba ${esperado}`,
+        );
+      }
+    },
+  );
+
+  await probar(
+    "Aprobar con stock insuficiente falla sin cambios (rollback)",
+    async () => {
+      const db = getDb();
+      const lineas = await lineasPendientesConRepuesto();
+      asegurar(
+        lineas.length > 0,
+        "no queda otra cotización Pendiente con repuestos",
+      );
+
+      const objetivo = lineas[0];
+      const stockOriginal = objetivo.stock_actual;
+      const stockInsuficiente = Math.max(0, objetivo.cantidad - 1);
+
+      try {
+        await db.runAsync(
+          `UPDATE Repuesto SET stock_actual = ? WHERE id_repuesto = ?;`,
+          [stockInsuficiente, objetivo.id_repuesto],
+        );
+
+        const stocksAntes = await mapaStockRepuestos();
+        const resumenAntesFallo = await getResumenHome();
+
+        let capturado: unknown = null;
+        try {
+          await cambiarEstado(objetivo.id_cotizacion, "Aprobada");
+        } catch (error) {
+          capturado = error;
+        }
+
+        asegurar(
+          capturado instanceof CotizacionError,
+          "no lanzó CotizacionError",
+        );
+        asegurar(
+          capturado.codigo === "STOCK_INSUFICIENTE",
+          `código de error ${capturado.codigo}`,
+        );
+
+        const cabecera = await db.getFirstAsync<{ estado: string }>(
+          `SELECT estado FROM Cotizacion WHERE id_cotizacion = ?;`,
+          [objetivo.id_cotizacion],
+        );
+        asegurar(
+          cabecera?.estado === "Pendiente",
+          `el estado cambió a ${cabecera?.estado}`,
+        );
+
+        const stocksDespues = await mapaStockRepuestos();
+        for (const [idRepuesto, stock] of stocksAntes) {
+          asegurar(
+            stocksDespues.get(idRepuesto) === stock,
+            `el stock del repuesto #${idRepuesto} cambió (${stock} → ${stocksDespues.get(idRepuesto)})`,
+          );
+        }
+
+        const resumenDespuesFallo = await getResumenHome();
+        asegurar(
+          resumenDespuesFallo.vehiculosActivos ===
+            resumenAntesFallo.vehiculosActivos &&
+            resumenDespuesFallo.cotizacionesPendientes ===
+              resumenAntesFallo.cotizacionesPendientes &&
+            resumenDespuesFallo.vehiculosListos ===
+              resumenAntesFallo.vehiculosListos,
+          "el resumen de Home cambió tras el fallo por stock",
+        );
+      } finally {
+        // Restaura el seed para no contaminar las demás pruebas.
+        await db.runAsync(
+          `UPDATE Repuesto SET stock_actual = ? WHERE id_repuesto = ?;`,
+          [stockOriginal, objetivo.id_repuesto],
+        );
+      }
+    },
+  );
+}
+
+// ---------------------------------------------------------------------
+// 6. Eliminar un activo con cotizaciones debe quedar bloqueado
+// ---------------------------------------------------------------------
+
+async function probarEliminarActivoConCotizaciones(): Promise<void> {
+  await probar(
+    "eliminarVehiculo() lanza ActivoError en un activo con cotizaciones",
+    async () => {
+      const db = getDb();
+      const fila = await db.getFirstAsync<{
+        id_activo: number;
+        total: number;
+      }>(
+        `
+        SELECT a.id_activo, COUNT(c.id_cotizacion) AS total
+          FROM Activo a
+          JOIN Cotizacion c ON c.id_activo = a.id_activo
+         GROUP BY a.id_activo
+         ORDER BY total DESC, a.id_activo ASC
+         LIMIT 1;
+        `,
+      );
+
+      asegurar(
+        fila !== null && fila.total > 0,
+        "el seed no tiene activos con cotizaciones",
+      );
+
+      let capturado: unknown = null;
+      try {
+        await eliminarVehiculo(fila!.id_activo);
+      } catch (error) {
+        capturado = error;
+      }
+
+      asegurar(capturado instanceof ActivoError, "no lanzó ActivoError");
+      asegurar(
+        capturado.codigo === "TIENE_HISTORIAL",
+        `código de error ${capturado.codigo}`,
+      );
+
+      const sigueExistiendo = await db.getFirstAsync<{ id_activo: number }>(
+        `SELECT id_activo FROM Activo WHERE id_activo = ?;`,
+        [fila!.id_activo],
+      );
+      asegurar(
+        sigueExistiendo !== null,
+        "el activo se eliminó a pesar de tener cotizaciones",
+      );
+    },
+  );
+}
+
+// ---------------------------------------------------------------------
+// Punto de entrada
+// ---------------------------------------------------------------------
 
 /**
- * Punto de entrada único: resetea la BD, aplica el esquema, siembra datos,
- * corre los triggers, las consultas de negocio y el ciclo CRUD de vehículos.
+ * Resetea la base, la vuelve a sembrar y ejecuta todas las aserciones.
+ * Se puede llamar desde un botón temporal o desde la consola sin agregar
+ * pantallas nuevas.
  */
-export async function runAllTests(): Promise<void> {
+export async function runAllTests(): Promise<ResultadoPruebas> {
   console.log(
     '=== INICIANDO PRUEBAS DE BASE DE DATOS — TALLER "ALEXANDER" ===',
   );
 
-  await resetDatabase();
-  await initDatabase();
+  resumen = { total: 0, correctas: 0, fallidas: 0, omitidas: 0 };
 
-  await seedTestData();
-  await testTriggerConsistenciaActivo();
-  await testTriggerRecalculoMonto();
-  await runBusinessQueries();
+  try {
+    await resetDatabase();
+    await initDatabase();
+  } catch (error) {
+    console.error("✘ No se pudo preparar la base de datos:", error);
+    resumen.total += 1;
+    resumen.fallidas += 1;
+    return { ...resumen, ok: false };
+  }
 
-  // 3. EJECUTAMOS EL CRUD DE VEHÍCULOS AQUÍ
-  await testCrudVehiculos();
+  await probarConteosSeed();
+  await probarMontosCotizaciones();
+  await probarArranqueIdempotente();
+  await probarResumenHome();
 
-  console.log("\n=== PRUEBAS FINALIZADAS EXITOSAMENTE ===");
+  const cambiarEstado = await cargarCambiarEstadoCotizacion();
+  await probarAprobacionConStock(cambiarEstado);
+
+  await probarEliminarActivoConCotizaciones();
+
+  const ok = resumen.fallidas === 0;
+  console.log(
+    `\n${ok ? "✔" : "✘"} RESULTADO: ${resumen.correctas} correctas, ` +
+      `${resumen.fallidas} fallidas, ${resumen.omitidas} omitidas ` +
+      `(${resumen.total} pruebas).`,
+  );
+
+  return { ...resumen, ok };
 }
