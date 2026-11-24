@@ -130,6 +130,7 @@ function TarjetaVehiculoReciente({ vehiculo }: { vehiculo: VehiculoReciente }) {
 export default function HomeScreen() {
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const sesion = getSesion();
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.red} />
@@ -144,12 +145,12 @@ export default function HomeScreen() {
           >
             <Ionicons name="menu" size={28} color={COLORS.white} />
           </TouchableOpacity>
-          <Text style={styles.headerText}>Bienvenido {sesion?.nombre ?? NOMBRE_USUARIO}</Text>
+          <Text style={styles.headerText}>
+            Bienvenido {sesion?.nombre ?? NOMBRE_USUARIO}
+          </Text>
           <View style={styles.menuButtonSpacer} />
         </View>
       </SafeAreaView>
-
-      
 
       <ScrollView
         style={styles.body}
@@ -200,7 +201,10 @@ export default function HomeScreen() {
 
         <View style={{ height: 24 }} />
       </ScrollView>
-      <Sidebar visible={sidebarVisible} onClose={() => setSidebarVisible(false)} />
+      <Sidebar
+        visible={sidebarVisible}
+        onClose={() => setSidebarVisible(false)}
+      />
     </View>
   );
 }
@@ -214,7 +218,7 @@ const styles = StyleSheet.create({
   headerSafeArea: {
     backgroundColor: COLORS.red,
   },
-    header: {
+  header: {
     backgroundColor: COLORS.red,
     paddingVertical: 18,
     paddingHorizontal: 16,

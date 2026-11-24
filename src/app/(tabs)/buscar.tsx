@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import {
+  ActivoError,
   eliminarActivo,
   getVehiculosConDetalle,
   VehiculoConDetalle,
@@ -91,7 +92,9 @@ export default function BuscarScreen() {
       console.error(error);
       Alert.alert(
         "Error al eliminar",
-        "No se pudo eliminar el activo. Intenta nuevamente.",
+        error instanceof ActivoError
+          ? error.message
+          : "No se pudo eliminar el activo. Intenta nuevamente.",
       );
       return false;
     }

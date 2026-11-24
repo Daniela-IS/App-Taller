@@ -10,8 +10,9 @@
 
 import * as SQLite from "expo-sqlite";
 import { compararSeguro, generarSalt, hashearPassword } from "./security";
-import { sembrarDatosIniciales } from "./seed";
+import { sembrarDatosIniciales, sembrarDatosOperativos } from "./seed";
 import type {
+  ActivoErrorCodigo,
   ActualizarPerfilInput,
   ActualizarTrabajadorInput,
   Cliente,
@@ -139,7 +140,8 @@ CREATE TABLE IF NOT EXISTS Repuesto (
     codigo_referencia  TEXT    UNIQUE,
     stock_actual       INTEGER NOT NULL DEFAULT 0,
     es_comercial       INTEGER NOT NULL CHECK (es_comercial IN (0,1)),
-    estado_operativo   TEXT    NOT NULL DEFAULT 'Activo' CHECK (estado_operativo IN ('Activo','Descontinuado'))
+    estado_operativo   TEXT    NOT NULL DEFAULT 'Activo' CHECK (estado_operativo IN ('Activo','Descontinuado')),
+    url_imagen         TEXT
 );
 
 CREATE TABLE IF NOT EXISTS OrdenDeTrabajo (
@@ -367,6 +369,23 @@ async function migrarTrabajador(db: SQLite.SQLiteDatabase): Promise<void> {
   });
 }
 
+/**
+ * Migración idempotente: agrega Repuesto.url_imagen en bases creadas antes
+ * de esta columna. En una base nueva no hace nada (ya viene en SCHEMA_SQL).
+ */
+async function migrarRepuesto(db: SQLite.SQLiteDatabase): Promise<void> {
+  const columnas = await db.getAllAsync<{ name: string }>(
+    `PRAGMA table_info(Repuesto);`,
+  );
+  const existentes = new Set(columnas.map((c) => c.name));
+
+  await db.withTransactionAsync(async () => {
+    if (!existentes.has("url_imagen")) {
+      await db.execAsync(`ALTER TABLE Repuesto ADD COLUMN url_imagen TEXT;`);
+    }
+  });
+}
+
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 
 /**
@@ -422,11 +441,13 @@ export async function initDatabase(): Promise<SQLite.SQLiteDatabase> {
   await db.execAsync("PRAGMA foreign_keys = ON;");
   await db.execAsync(SCHEMA_SQL);
   await migrarTrabajador(db);
+  await migrarRepuesto(db);
   await db.execAsync(AUTH_SQL);
 
   dbInstance = db;
   await seedUsuariosPorDefecto();
   await sembrarDatosIniciales(db);
+  await sembrarDatosOperativos(db);
   return db;
 }
 
@@ -727,10 +748,31 @@ export async function actualizarVehiculo(
   );
 }
 
-/** 4. ELIMINAR: Borra el vehículo y su medidor asociado respetando restricciones */
+export class ActivoError extends Error {
+  readonly codigo: ActivoErrorCodigo;
+
+  constructor(codigo: ActivoErrorCodigo, mensaje: string) {
+    super(mensaje);
+    this.name = "ActivoError";
+    this.codigo = codigo;
+  }
+}
+
+/** 4. ELIMINAR: Borra el vehículo y su medidor asociado; bloquea si tiene historial */
 export async function eliminarVehiculo(idActivo: number): Promise<void> {
   const db = getDb();
   await db.withTransactionAsync(async () => {
+    const refs = await db.getFirstAsync<{ total: number }>(
+      `SELECT (SELECT COUNT(*) FROM OrdenDeTrabajo WHERE id_activo = ?)
+            + (SELECT COUNT(*) FROM Cotizacion WHERE id_activo = ?) AS total;`,
+      [idActivo, idActivo],
+    );
+    if (refs && refs.total > 0) {
+      throw new ActivoError(
+        "TIENE_HISTORIAL",
+        "Este activo tiene órdenes o cotizaciones asociadas, por lo que no se puede eliminar.",
+      );
+    }
     // Primero borramos el medidor dependiente
     await db.runAsync(`DELETE FROM Medidor WHERE id_activo = ?;`, [idActivo]);
     // Luego borramos el vehículo

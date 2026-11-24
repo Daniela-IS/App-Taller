@@ -4,20 +4,28 @@
 // de expo-sqlite (getAllAsync<T>, getFirstAsync<T>, etc.)
 // =====================================================================
 
-export type TipoDocumentoIdentidad = 'RUC' | 'DNI';
-export type TipoCliente = 'Empresa' | 'Persona Natural';
-export type TipoActivo = 'Vehiculo' | 'EquipoEstacionario';
-export type TipoMedidor = 'Odometro' | 'Horometro' | 'Ciclos';
-export type TipoContrato = 'Fijo' | 'Subcontratado';
+export type TipoDocumentoIdentidad = "RUC" | "DNI";
+export type TipoCliente = "Empresa" | "Persona Natural";
+export type TipoActivo = "Vehiculo" | "EquipoEstacionario";
+export type TipoMedidor = "Odometro" | "Horometro" | "Ciclos";
+export type TipoContrato = "Fijo" | "Subcontratado";
 
 /** Roles del sistema. Catálogo cerrado: no agregar más sin migrar schema.sql. */
-export const ROLES = ['admin', 'trabajador'] as const;
+export const ROLES = ["admin", "trabajador"] as const;
 export type RolNombre = (typeof ROLES)[number];
-export type EstadoRepuesto = 'Activo' | 'Descontinuado';
-export type EstadoOrden = 'Pendiente' | 'En Proceso' | 'Completada' | 'Cancelada';
-export type EstadoCotizacion = 'Pendiente' | 'Aprobada' | 'Rechazada' | 'Anulada';
-export type TipoItemDetalle = 'Repuesto' | 'Servicio';
-export type EstadoDisponibilidad = 'VENCIDO' | 'PROXIMO' | 'OK';
+export type EstadoRepuesto = "Activo" | "Descontinuado";
+export type EstadoOrden =
+  | "Pendiente"
+  | "En Proceso"
+  | "Completada"
+  | "Cancelada";
+export type EstadoCotizacion =
+  | "Pendiente"
+  | "Aprobada"
+  | "Rechazada"
+  | "Anulada";
+export type TipoItemDetalle = "Repuesto" | "Servicio";
+export type EstadoDisponibilidad = "VENCIDO" | "PROXIMO" | "OK";
 
 // SQLite no tiene boolean real: expo-sqlite devuelve 0 | 1 en columnas INTEGER
 export type SQLiteBoolean = 0 | 1;
@@ -114,6 +122,7 @@ export interface Repuesto {
   stock_actual: number;
   es_comercial: SQLiteBoolean;
   estado_operativo: EstadoRepuesto;
+  url_imagen: string | null;
 }
 
 export interface OrdenDeTrabajo {
@@ -247,7 +256,6 @@ export interface ActualizarTrabajadorInput {
   activo?: boolean;
   /** Si viene, reemplaza la contraseña (reseteo por parte del admin). */
   nuevaPassword?: string;
-  
 }
 
 /** Campos que el propio usuario puede editar de su perfil (sin rol ni activo). */
@@ -271,19 +279,21 @@ export interface UsuarioSesion {
 }
 
 export type MotivoFalloLogin =
-  | 'CREDENCIALES_INVALIDAS'
-  | 'USUARIO_INACTIVO'
-  | 'ROL_NO_AUTORIZADO';
+  | "CREDENCIALES_INVALIDAS"
+  | "USUARIO_INACTIVO"
+  | "ROL_NO_AUTORIZADO";
 
 export type ResultadoLogin =
   | { ok: true; usuario: UsuarioSesion }
   | { ok: false; motivo: MotivoFalloLogin };
 
 export type TrabajadorErrorCodigo =
-  | 'DATOS_INVALIDOS'
-  | 'CORREO_DUPLICADO'
-  | 'DNI_DUPLICADO'
-  | 'NO_ENCONTRADO'
-  | 'ULTIMO_ADMIN'
-  | 'TIENE_HISTORIAL'
-  | 'PASSWORD_ACTUAL_INCORRECTA';
+  | "DATOS_INVALIDOS"
+  | "CORREO_DUPLICADO"
+  | "DNI_DUPLICADO"
+  | "NO_ENCONTRADO"
+  | "ULTIMO_ADMIN"
+  | "TIENE_HISTORIAL"
+  | "PASSWORD_ACTUAL_INCORRECTA";
+
+export type ActivoErrorCodigo = "TIENE_HISTORIAL" | "NO_ENCONTRADO";

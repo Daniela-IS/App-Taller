@@ -78,3 +78,11 @@ export function parseNumeroNoNegativo(texto: string): number | null {
   const n = Number(t);
   return Number.isFinite(n) ? n : null;
 }
+
+// ---------------- URL DE IMAGEN ----------------
+
+/** true solo si empieza con http:// o https://, no tiene espacios y el host no está vacío. */
+export function esUrlImagenValida(texto: string): boolean {
+  if (/\s/.test(texto)) return false;
+  return /^https?:\/\/[^\/?#:@][^\/?#]*/i.test(texto);
+}
