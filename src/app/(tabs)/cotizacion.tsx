@@ -1,5 +1,6 @@
 // src/app/(tabs)/cotizacion.tsx
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router"; // TEMPORAL FRENTE B
 import { useState } from "react";
 import {
   Alert,
@@ -13,6 +14,7 @@ import {
   View,
 } from "react-native";
 import Sidebar from "../../components/Sidebar";
+import { debugUltimaCotizacion } from "../../db/debugFase0"; // TEMPORAL FRENTE B
 
 // ---------- Colores institucionales (mismos que home.tsx) ----------
 const COLORS = {
@@ -152,6 +154,7 @@ function TarjetaRepuesto({
 // ---------- Pantalla principal ----------
 export default function CotizacionScreen() {
   const [sidebarVisible, setSidebarVisible] = useState(false);
+  const router = useRouter(); // TEMPORAL FRENTE B
   const [seleccionadoId, setSeleccionadoId] = useState<string>(repuestos[0].id);
   const [cantidad, setCantidad] = useState(1);
 
@@ -193,6 +196,39 @@ export default function CotizacionScreen() {
           <View style={styles.menuButtonSpacer} />
         </View>
       </SafeAreaView>
+
+      {/* TEMPORAL FRENTE B: inicio (borrar hasta "fin") */}
+      <View style={{ flexDirection: "row", gap: 8, padding: 12 }}>
+        <TouchableOpacity
+          style={{
+            flex: 1,
+            backgroundColor: COLORS.red,
+            borderRadius: 10,
+            padding: 12,
+            alignItems: "center",
+          }}
+          onPress={() => router.push("/nueva-cotizacion")}
+        >
+          <Text style={{ color: COLORS.white, fontWeight: "800" }}>
+            + Nueva (temporal)
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={{
+            flex: 1,
+            backgroundColor: COLORS.cardDark,
+            borderRadius: 10,
+            padding: 12,
+            alignItems: "center",
+          }}
+          onPress={() => void debugUltimaCotizacion()}
+        >
+          <Text style={{ color: COLORS.white, fontWeight: "800" }}>
+            Debug última
+          </Text>
+        </TouchableOpacity>
+      </View>
+      {/* TEMPORAL FRENTE B: fin */}
 
       {/* Catálogo en cuadrícula de 2 columnas */}
       <FlatList
