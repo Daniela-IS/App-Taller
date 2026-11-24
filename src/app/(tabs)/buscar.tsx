@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import {
+  ActivoError,
   eliminarActivo,
   getVehiculosConDetalle,
   VehiculoConDetalle,
@@ -29,6 +30,8 @@ const COLORS = {
   warnText: "#b8720a",
   editBg: "#eef2f7",
   editText: "#2f3640",
+  black: "#000000",
+  panel: "#2f3640",
 };
 
 export default function BuscarScreen() {
@@ -89,7 +92,9 @@ export default function BuscarScreen() {
       console.error(error);
       Alert.alert(
         "Error al eliminar",
-        "No se pudo eliminar el activo. Intenta nuevamente.",
+        error instanceof ActivoError
+          ? error.message
+          : "No se pudo eliminar el activo. Intenta nuevamente.",
       );
       return false;
     }
@@ -97,7 +102,7 @@ export default function BuscarScreen() {
 
   if (cargando) {
     return (
-      <View style={styles.centered}>
+      <View style={[styles.centered, styles.loadingScreen]}>
         <ActivityIndicator size="large" color={COLORS.red} />
       </View>
     );
@@ -131,6 +136,7 @@ export default function BuscarScreen() {
       <FlatList
         data={activosFiltrados}
         keyExtractor={(item) => String(item.id_activo)}
+        style={styles.listPanel}
         contentContainerStyle={styles.listContent}
         keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
@@ -269,14 +275,14 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: COLORS.gray,
+    backgroundColor: COLORS.black,
     paddingTop: 60,
     paddingHorizontal: 16,
   },
   header: {
     fontSize: 22,
     fontWeight: "bold",
-    color: COLORS.dark,
+    color: COLORS.white,
     marginBottom: 16,
   },
   searchBox: {
@@ -296,8 +302,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: COLORS.dark,
   },
+  listPanel: {
+    flex: 1,
+    backgroundColor: COLORS.panel,
+    borderRadius: 15,
+    marginBottom: 16,
+  },
   listContent: {
-    paddingBottom: 40,
+    padding: 12,
+    flexGrow: 1,
   },
   centered: {
     flex: 1,
@@ -305,8 +318,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 60,
   },
+  loadingScreen: {
+    backgroundColor: COLORS.black,
+    marginTop: 0,
+  },
   emptyText: {
-    color: COLORS.muted,
+    color: COLORS.placeholder,
     fontSize: 15,
   },
   card: {

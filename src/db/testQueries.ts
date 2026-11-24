@@ -185,6 +185,7 @@ async function testCrudVehiculos(): Promise<void> {
     1,
     1,
     1,
+    "Vehiculo",
     "XYZ-999",
     15.5,
     "Odometro",
@@ -203,7 +204,7 @@ async function testCrudVehiculos(): Promise<void> {
   );
 
   console.log("\n=== TEST CRUD: Actualizar el vehículo creado ===");
-  await actualizarVehiculo(nuevoId, "XYZ-999 (Modificado)", 20.0, 1);
+  await actualizarVehiculo(nuevoId, 1, 1, "XYZ-998", 20.0);
   vehiculos = await getVehiculosConDetalle();
   console.log(
     "Vehículo actualizado:",

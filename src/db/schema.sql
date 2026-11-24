@@ -132,7 +132,8 @@ CREATE TABLE IF NOT EXISTS Repuesto (
     codigo_referencia  TEXT    UNIQUE,
     stock_actual       INTEGER NOT NULL DEFAULT 0,
     es_comercial       INTEGER NOT NULL CHECK (es_comercial IN (0,1)),
-    estado_operativo   TEXT    NOT NULL DEFAULT 'Activo' CHECK (estado_operativo IN ('Activo','Descontinuado'))
+    estado_operativo   TEXT    NOT NULL DEFAULT 'Activo' CHECK (estado_operativo IN ('Activo','Descontinuado')),
+    url_imagen         TEXT                                      -- opcional (http/https)
 );
 
 -- =====================================================================
