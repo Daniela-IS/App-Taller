@@ -16,7 +16,7 @@ import {
 
 
 import Sidebar from "../../components/Sidebar";
-import { getRepuestosConPrecio, STOCK_BAJO } from "../../db/inventario";
+import { getRepuestosConPrecio, STOCK_BAJO } from "../../db/catalogos";
 // ---------- Colores institucionales (mismos que home.tsx) ----------
 const COLORS = {
   bgDark: "#121212",

@@ -276,46 +276,6 @@ export async function getRepuestoPorId(
 }
 
 // ---------------------------------------------------------------------
-// LISTADO PARA LA PANTALLA DE INVENTARIO
-// ---------------------------------------------------------------------
-
-/** Stock igual o menor a este valor se muestra en rojo en la lista. */
-export const STOCK_BAJO = 5;
-
-export interface RepuestoConPrecio extends RepuestoDetalle {
-  mejor_precio: number | null;
-  mejor_proveedor: string | null;
-}
-
-/**
- * Todos los repuestos con su mejor (menor) precio y el proveedor que lo
- * ofrece. Sin precios -> mejor_precio y mejor_proveedor quedan en null.
- */
-export async function getRepuestosConPrecio(): Promise<RepuestoConPrecio[]> {
-  await asegurarColumnaImagen();
-  return getDb().getAllAsync<RepuestoConPrecio>(
-    `SELECT r.id_repuesto, r.nombre, r.codigo_referencia, r.stock_actual,
-            r.es_comercial, r.estado_operativo, r.url_imagen,
-            (SELECT MIN(rp.precio_ofrecido)
-               FROM RepuestoProveedor rp
-              WHERE rp.id_repuesto = r.id_repuesto) AS mejor_precio,
-            (SELECT COALESCE(p.nombre_comercial, p.razon_social)
-               FROM RepuestoProveedor rp
-               JOIN Proveedor p ON p.id_proveedor = rp.id_proveedor
-              WHERE rp.id_repuesto = r.id_repuesto
-              ORDER BY rp.precio_ofrecido ASC, p.id_proveedor ASC
-              LIMIT 1) AS mejor_proveedor
-       FROM Repuesto r
-      ORDER BY r.nombre COLLATE NOCASE ASC;`,
-  );
-}
-
-/** URL http/https sin espacios. Vacía se considera "sin imagen" (no pasa por aquí). */
-export function esUrlImagenValida(url: string): boolean {
-  return /^https?:\/\/[^\s/$.?#][^\s]*$/i.test(url.trim());
-}
-
-// ---------------------------------------------------------------------
 // PROVEEDORES
 // ---------------------------------------------------------------------
 

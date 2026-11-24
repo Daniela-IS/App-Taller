@@ -17,6 +17,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { esUrlImagenValida } from "../utils/validaciones";
 import { FormModal } from "../components/CatalogQuickAddModals";
 import SearchableSelect from "../components/SearchableSelect";
 import {
@@ -25,7 +26,6 @@ import {
   crearProveedor,
   crearRepuesto,
   eliminarRepuesto,
-  esUrlImagenValida,
   getPreciosDeRepuesto,
   getProveedores,
   getRepuestoPorId,
