@@ -1,5 +1,6 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import { useFocusEffect } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
   SafeAreaView,
   ScrollView,
@@ -10,6 +11,13 @@ import {
   View,
 } from "react-native";
 import Sidebar from "../../components/Sidebar";
+import {
+  getResumenHome,
+  getVehiculosRecientes,
+  type EstadoVehiculoHome,
+  type ResumenHome,
+  type VehiculoRecienteHome,
+} from "../../db/home";
 import { getSesion } from "../../db/sesion";
 
 // ---------- Colores institucionales ----------
@@ -24,51 +32,14 @@ const COLORS = {
   textLight: "#EDEDED",
 };
 
-// ---------- Tipos ----------
-type EstadoVehiculo = "En revisión" | "Listo";
-
-interface VehiculoReciente {
-  id: string;
-  placa: string;
-  modelo: string;
-  estado: EstadoVehiculo;
-  icono: "truck" | "car";
-}
-
-// ---------- Mock data ----------
-const NOMBRE_USUARIO = "Alexander";
-
-const resumen = {
-  vehiculosActivos: 4,
-  cotizacionesPendientes: 2,
+const RESUMEN_VACIO: ResumenHome = {
+  vehiculosActivos: 0,
+  cotizacionesPendientes: 0,
+  vehiculosListos: 0,
 };
 
-const vehiculosRecientes: VehiculoReciente[] = [
-  {
-    id: "1",
-    placa: "ABC - 123",
-    modelo: "Volvo VNL'18",
-    estado: "En revisión",
-    icono: "truck",
-  },
-  {
-    id: "2",
-    placa: "XYZ - 789",
-    modelo: "Volvo VNL'18",
-    estado: "Listo",
-    icono: "car",
-  },
-  {
-    id: "3",
-    placa: "MKL - 456",
-    modelo: "Volvo VNL'18",
-    estado: "En revisión",
-    icono: "car",
-  },
-];
-
 // ---------- Componentes internos ----------
-function EstadoBadge({ estado }: { estado: EstadoVehiculo }) {
+function EstadoBadge({ estado }: { estado: EstadoVehiculoHome }) {
   const isListo = estado === "Listo";
   return (
     <View
@@ -82,8 +53,8 @@ function EstadoBadge({ estado }: { estado: EstadoVehiculo }) {
   );
 }
 
-function VehiculoIcon({ tipo }: { tipo: "truck" | "car" }) {
-  const name = tipo === "truck" ? "truck" : "car";
+function VehiculoIcon({ tipoUnidad }: { tipoUnidad: string }) {
+  const name = tipoUnidad === "Camión" ? "truck" : "car";
   return <MaterialCommunityIcons name={name} size={40} color={COLORS.bgDark} />;
 }
 
@@ -91,35 +62,37 @@ function TarjetaResumen({
   icono,
   numero,
   label,
-  iconColor,
 }: {
   icono: React.ReactNode;
-  numero?: number;
+  numero: number;
   label: string;
-  iconColor: string;
 }) {
   return (
     <View style={styles.summaryCard}>
-      {numero !== undefined && (
-        <View style={styles.summaryBadge}>
-          <Text style={styles.summaryBadgeText}>{numero}</Text>
-        </View>
-      )}
+      <View style={styles.summaryBadge}>
+        <Text style={styles.summaryBadgeText}>{numero}</Text>
+      </View>
       <View style={styles.summaryIconWrapper}>{icono}</View>
       <Text style={styles.summaryLabel}>{label}</Text>
     </View>
   );
 }
 
-function TarjetaVehiculoReciente({ vehiculo }: { vehiculo: VehiculoReciente }) {
+function TarjetaVehiculoReciente({
+  vehiculo,
+}: {
+  vehiculo: VehiculoRecienteHome;
+}) {
   return (
     <View style={styles.vehicleCard}>
       <View style={styles.vehicleIconCircle}>
-        <VehiculoIcon tipo={vehiculo.icono} />
+        <VehiculoIcon tipoUnidad={vehiculo.tipo_unidad} />
       </View>
       <View style={styles.vehicleInfo}>
-        <Text style={styles.vehiclePlaca}>{vehiculo.placa}</Text>
-        <Text style={styles.vehicleModelo}>{vehiculo.modelo}</Text>
+        <Text style={styles.vehiclePlaca}>{vehiculo.placa ?? "Sin placa"}</Text>
+        <Text style={styles.vehicleModelo}>
+          {vehiculo.marca ?? "Sin marca"} · {vehiculo.tipo_unidad}
+        </Text>
       </View>
       <EstadoBadge estado={vehiculo.estado} />
     </View>
@@ -129,7 +102,42 @@ function TarjetaVehiculoReciente({ vehiculo }: { vehiculo: VehiculoReciente }) {
 // ---------- Pantalla principal ----------
 export default function HomeScreen() {
   const [sidebarVisible, setSidebarVisible] = useState(false);
+  const [resumen, setResumen] = useState<ResumenHome>(RESUMEN_VACIO);
+  const [vehiculosRecientes, setVehiculosRecientes] = useState<
+    VehiculoRecienteHome[]
+  >([]);
+  const [cargado, setCargado] = useState(false);
   const sesion = getSesion();
+
+  // Se recarga cada vez que la pestaña vuelve a estar visible: al crear o
+  // aprobar/rechazar una cotización, los números y la lista se actualizan solos.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelado = false;
+
+      const cargarDatos = async () => {
+        try {
+          const [resumenActual, recientes] = await Promise.all([
+            getResumenHome(),
+            getVehiculosRecientes(5),
+          ]);
+          if (cancelado) return;
+          setResumen(resumenActual);
+          setVehiculosRecientes(recientes);
+          setCargado(true);
+        } catch (error) {
+          if (!cancelado) {
+            console.error("No se pudieron cargar los datos de Home:", error);
+          }
+        }
+      };
+
+      cargarDatos();
+      return () => {
+        cancelado = true;
+      };
+    }, []),
+  );
 
   return (
     <View style={styles.container}>
@@ -145,8 +153,8 @@ export default function HomeScreen() {
           >
             <Ionicons name="menu" size={28} color={COLORS.white} />
           </TouchableOpacity>
-          <Text style={styles.headerText}>
-            Bienvenido {sesion?.nombre ?? NOMBRE_USUARIO}
+          <Text style={styles.headerText} numberOfLines={1}>
+            {sesion?.nombre ? `Bienvenido ${sesion.nombre}` : "Bienvenido"}
           </Text>
           <View style={styles.menuButtonSpacer} />
         </View>
@@ -169,7 +177,6 @@ export default function HomeScreen() {
             }
             numero={resumen.vehiculosActivos}
             label={"Vehículos\nActivos"}
-            iconColor={COLORS.yellow}
           />
           <TarjetaResumen
             icono={
@@ -181,23 +188,29 @@ export default function HomeScreen() {
             }
             numero={resumen.cotizacionesPendientes}
             label={"Cotizaciones\nPendientes"}
-            iconColor="#E8672A"
           />
           <TarjetaResumen
             icono={
               <Ionicons name="checkmark-sharp" size={40} color={COLORS.green} />
             }
+            numero={resumen.vehiculosListos}
             label={"Vehículos\nListos"}
-            iconColor={COLORS.green}
           />
         </View>
 
         {/* Sección vehículos recientes */}
         <Text style={styles.sectionTitle}>Vehículos Recientes</Text>
 
-        {vehiculosRecientes.map((vehiculo) => (
-          <TarjetaVehiculoReciente key={vehiculo.id} vehiculo={vehiculo} />
-        ))}
+        {cargado && vehiculosRecientes.length === 0 ? (
+          <Text style={styles.emptyText}>Aún no hay vehículos registrados.</Text>
+        ) : (
+          vehiculosRecientes.map((vehiculo) => (
+            <TarjetaVehiculoReciente
+              key={vehiculo.id_activo}
+              vehiculo={vehiculo}
+            />
+          ))
+        )}
 
         <View style={{ height: 24 }} />
       </ScrollView>
@@ -233,9 +246,12 @@ const styles = StyleSheet.create({
     width: 28,
   },
   headerText: {
+    flex: 1,
     color: COLORS.white,
     fontSize: 20,
     fontWeight: "700",
+    textAlign: "center",
+    marginHorizontal: 8,
   },
   body: {
     flex: 1,
@@ -266,8 +282,9 @@ const styles = StyleSheet.create({
     right: 8,
     backgroundColor: COLORS.yellow,
     borderRadius: 10,
-    width: 20,
+    minWidth: 20,
     height: 20,
+    paddingHorizontal: 4,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -290,6 +307,12 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 20,
     fontWeight: "700",
+    marginBottom: 14,
+  },
+  emptyText: {
+    color: COLORS.textLight,
+    fontSize: 14,
+    fontWeight: "600",
     marginBottom: 14,
   },
   vehicleCard: {
